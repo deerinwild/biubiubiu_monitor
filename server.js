@@ -4,12 +4,12 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// 简单内存存储（重启丢失，仅演示）
+// 简单内存存储，生产环境请替换为数据库
 let events = [];
 
 app.post('/api/event', (req, res) => {
   const data = req.body;
-  console.log('收到统计:', data);
+  console.log('Received:', data);
   events.push(data);
   res.json({ ok: true });
 });
@@ -27,4 +27,4 @@ app.get('/api/stats', (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+app.listen(PORT, () => console.log(`Stats server on ${PORT}`));
