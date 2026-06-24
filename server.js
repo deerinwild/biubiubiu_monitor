@@ -15,7 +15,7 @@ const PORT = process.env.PORT || 3000;
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN || '';
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN || '';
 const GITHUB_OWNER = process.env.GITHUB_OWNER || 'deerinwild';
-const GITHUB_REPO = process.env.GITHUB_REPO || 'biupc_data';
+const GITHUB_REPO = process.env.GITHUB_REPO || 'biubiubiu_data';
 const GITHUB_BRANCH = process.env.GITHUB_BRANCH || 'main';
 const GITHUB_API = 'https://api.github.com';
 
@@ -113,7 +113,7 @@ function ghHeaders() {
     Authorization: `Bearer ${GITHUB_TOKEN}`,
     Accept: 'application/vnd.github+json',
     'X-GitHub-Api-Version': '2022-11-28',
-    'User-Agent': 'biupc-monitor',
+    'User-Agent': 'biubiubiu-monitor',
   };
 }
 
@@ -348,7 +348,7 @@ async function writeDateToGithub(date, pendingData) {
   counterData.date = date;
   mergeCounterFile(counterData, pendingData);
   counterData.updatedAt = nowIso();
-  await ghPutJson(counterPath, counterData, current.sha, `biupc counter ${date}`);
+  await ghPutJson(counterPath, counterData, current.sha, `biubiubiu counter ${date}`);
 
   const summaryCurrent = await ghGetJson(summaryPath);
   const summary = summaryCurrent.data || { month: monthKey, days: {} };
@@ -356,7 +356,7 @@ async function writeDateToGithub(date, pendingData) {
   summary.days = summary.days || {};
   summary.days[date] = summarizeCounter(counterData);
   summary.updatedAt = nowIso();
-  await ghPutJson(summaryPath, summary, summaryCurrent.sha, `biupc summary ${monthKey}`);
+  await ghPutJson(summaryPath, summary, summaryCurrent.sha, `biubiubiu summary ${monthKey}`);
 
   statsCache.delete(date);
 }
@@ -481,13 +481,13 @@ function esc(s) {
 function renderDashboard(stats) {
   const rows = (stats.users || []).map((u, i) => `<tr><td>${i + 1}</td><td>${esc(u.weiboNickname)}</td><td>${u.activeDevices || 0}</td><td>${u.danmuSent || 0}</td><td>${u.discussionSent || 0}</td><td><b>${u.totalSent || 0}</b></td><td>${esc(u.lastSeenAt || '')}</td></tr>`).join('');
   const githubLine = `GitHub：${stats.githubEnabled ? '已启用' : '未启用/内存模式'}　状态：${esc(lastGithubStatus)}${githubInCooldown() ? `　冷却至：${esc(new Date(githubCooldownUntil).toISOString())}` : ''}`;
-  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>biupc dashboard</title><style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;margin:0;background:#f6f7fb;color:#111827}.wrap{max-width:1120px;margin:0 auto;padding:24px}h1{font-size:24px;margin:0 0 6px}.muted{color:#6b7280;font-size:13px}.cards{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:20px 0}.card{background:#fff;border:1px solid #e5e7eb;border-radius:16px;padding:16px}.num{font-size:28px;font-weight:800;margin-top:8px}table{width:100%;border-collapse:collapse;background:#fff;border-radius:16px;overflow:hidden;border:1px solid #e5e7eb}th,td{text-align:left;padding:10px 12px;border-bottom:1px solid #eef0f4;font-size:14px}th{background:#f9fafb;color:#374151}tr:last-child td{border-bottom:0}.warn{margin-top:12px;color:#9a3412;background:#fff7ed;border:1px solid #fed7aa;border-radius:12px;padding:10px 12px;font-size:13px;word-break:break-all}@media(max-width:760px){.cards{grid-template-columns:1fr 1fr}.wrap{padding:14px}table{font-size:12px}}</style></head><body><div class="wrap"><h1>biubiubiu 统计面板</h1><div class="muted">日期：${esc(stats.date)}　来源：${esc(stats.source)}　${githubLine}</div>${lastGithubError ? `<div class="warn">最近 GitHub 错误：${esc(lastGithubError)}</div>` : ''}<div class="cards"><div class="card"><div>今日活跃用户</div><div class="num">${stats.activeUsers || 0}</div></div><div class="card"><div>今日活跃设备</div><div class="num">${stats.activeDevices || 0}</div></div><div class="card"><div>弹幕发送</div><div class="num">${stats.danmuSent || 0}</div></div><div class="card"><div>讨论发送</div><div class="num">${stats.discussionSent || 0}</div></div></div><table><thead><tr><th>#</th><th>微博昵称</th><th>设备数</th><th>弹幕发送</th><th>讨论发送</th><th>总发送</th><th>最后上报</th></tr></thead><tbody>${rows || '<tr><td colspan="7" class="muted">暂无数据</td></tr>'}</tbody></table></div></body></html>`;
+  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>biubiubiu dashboard</title><style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;margin:0;background:#f6f7fb;color:#111827}.wrap{max-width:1120px;margin:0 auto;padding:24px}h1{font-size:24px;margin:0 0 6px}.muted{color:#6b7280;font-size:13px}.cards{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:20px 0}.card{background:#fff;border:1px solid #e5e7eb;border-radius:16px;padding:16px}.num{font-size:28px;font-weight:800;margin-top:8px}table{width:100%;border-collapse:collapse;background:#fff;border-radius:16px;overflow:hidden;border:1px solid #e5e7eb}th,td{text-align:left;padding:10px 12px;border-bottom:1px solid #eef0f4;font-size:14px}th{background:#f9fafb;color:#374151}tr:last-child td{border-bottom:0}.warn{margin-top:12px;color:#9a3412;background:#fff7ed;border:1px solid #fed7aa;border-radius:12px;padding:10px 12px;font-size:13px;word-break:break-all}@media(max-width:760px){.cards{grid-template-columns:1fr 1fr}.wrap{padding:14px}table{font-size:12px}}</style></head><body><div class="wrap"><h1>biubiubiu 统计面板</h1><div class="muted">日期：${esc(stats.date)}　来源：${esc(stats.source)}　${githubLine}</div>${lastGithubError ? `<div class="warn">最近 GitHub 错误：${esc(lastGithubError)}</div>` : ''}<div class="cards"><div class="card"><div>今日活跃用户</div><div class="num">${stats.activeUsers || 0}</div></div><div class="card"><div>今日活跃设备</div><div class="num">${stats.activeDevices || 0}</div></div><div class="card"><div>弹幕发送</div><div class="num">${stats.danmuSent || 0}</div></div><div class="card"><div>讨论发送</div><div class="num">${stats.discussionSent || 0}</div></div></div><table><thead><tr><th>#</th><th>微博昵称</th><th>设备数</th><th>弹幕发送</th><th>讨论发送</th><th>总发送</th><th>最后上报</th></tr></thead><tbody>${rows || '<tr><td colspan="7" class="muted">暂无数据</td></tr>'}</tbody></table></div></body></html>`;
 }
 
 app.get('/health', (req, res) => {
   res.json({
     ok: true,
-    service: 'biupc_monitor',
+    service: 'biubiubiu_monitor',
     githubEnabled: githubEnabled(),
     owner: GITHUB_OWNER,
     repo: GITHUB_REPO,
@@ -541,7 +541,7 @@ app.get('/api/stats', requireAdmin, async (req, res) => {
 
 app.get('/', (req, res) => {
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
-  res.send('<!doctype html><meta charset="utf-8"><title>biupc monitor</title><body style="font-family:system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;padding:40px;background:#f5f7fb;color:#111827"><h1>biupc monitor 已启动</h1><p>请打开 <code>/dashboard?token=你的ADMIN_TOKEN</code> 查看统计面板。</p><p>插件统计上报接口：<code>/api/ping</code></p><p>健康检查：<a href="/health">/health</a></p></body>');
+  res.send('<!doctype html><meta charset="utf-8"><title>biubiubiu monitor</title><body style="font-family:system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;padding:40px;background:#f5f7fb;color:#111827"><h1>biubiubiu monitor 已启动</h1><p>请打开 <code>/dashboard?token=你的ADMIN_TOKEN</code> 查看统计面板。</p><p>插件统计上报接口：<code>/api/ping</code></p><p>健康检查：<a href="/health">/health</a></p></body>');
 });
 
 app.get('/dashboard', async (req, res) => {
@@ -557,5 +557,5 @@ app.get('/dashboard', async (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`biupc monitor running on port ${PORT}, github=${githubEnabled() ? 'on' : 'off'}, flushIntervalMs=${GITHUB_FLUSH_INTERVAL_MS}`);
+  console.log(`biubiubiu monitor running on port ${PORT}, github=${githubEnabled() ? 'on' : 'off'}, flushIntervalMs=${GITHUB_FLUSH_INTERVAL_MS}`);
 });
