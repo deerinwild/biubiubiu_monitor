@@ -338,6 +338,51 @@ function acceptDailyCounters(body) {
   return acceptedDates;
 }
 
+function buildLatestUsers(counterData, limit = 100) {
+  const users = Object.values((counterData && counterData.users) || {}).map(user => {
+    computeUserTotals(user);
+    return {
+      weiboNickname: user.weiboNickname || '',
+      activeDevices: count(user.activeDevices, 0),
+      danmuSent: count(user.danmuSent, 0),
+      discussionSent: count(user.discussionSent, 0),
+      danmuFailed: count(user.danmuFailed, 0),
+      discussionFailed: count(user.discussionFailed, 0),
+      danmuSkipped: count(user.danmuSkipped, 0),
+      totalSent: count(user.danmuSent, 0) + count(user.discussionSent, 0),
+      lastSeenAt: user.lastSeenAt || '',
+    };
+  });
+  return users.sort((a, b) => b.totalSent - a.totalSent || String(a.weiboNickname).localeCompare(String(b.weiboNickname), 'zh-Hans-CN')).slice(0, limit);
+}
+
+async function writeLatestIndexToGithub(date, counterPath, summaryPath, counterData) {
+  const latestPath = 'archive/summary/latest.json';
+  const { monthKey } = monthInfo(date);
+  const current = await ghGetJson(latestPath);
+  const existing = current.data || {};
+  const existingDate = String(existing.date || '');
+
+  // 14 天补报可能会写入较早日期。latest.json 只指向最新日期，避免被旧数据回退。
+  if (existingDate && existingDate > date) return;
+
+  const totals = summarizeCounter(counterData);
+  const latest = {
+    schemaVersion: 1,
+    app: 'biubiubiu_android',
+    date,
+    month: monthKey,
+    updatedAt: nowIso(),
+    paths: {
+      counter: counterPath,
+      summary: summaryPath,
+    },
+    totals,
+    users: buildLatestUsers(counterData),
+  };
+  await ghPutJson(latestPath, latest, current.sha, `biubiubiu latest ${date}`);
+}
+
 async function writeDateToGithub(date, pendingData) {
   const { year, month, monthKey } = monthInfo(date);
   const counterPath = `archive/counters/${year}/${month}/${date}.json`;
@@ -357,6 +402,8 @@ async function writeDateToGithub(date, pendingData) {
   summary.days[date] = summarizeCounter(counterData);
   summary.updatedAt = nowIso();
   await ghPutJson(summaryPath, summary, summaryCurrent.sha, `biubiubiu summary ${monthKey}`);
+
+  await writeLatestIndexToGithub(date, counterPath, summaryPath, counterData);
 
   statsCache.delete(date);
 }

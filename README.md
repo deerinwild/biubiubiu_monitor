@@ -76,3 +76,13 @@ https://你的-render域名/api/stats?token=你的ADMIN_TOKEN
 ```text
 https://你的-render域名/dashboard?token=你的ADMIN_TOKEN
 ```
+
+## GitHub Pages 最新索引
+
+本版本在写入每日明细和月度汇总时，会同步维护：
+
+```text
+archive/summary/latest.json
+```
+
+`latest.json` 指向最新日期的数据，便于 `biubiubiu_data` 仓库根目录的 `index.html` 直接读取，不再需要访问 Render Dashboard。14 天补报写入旧日期时不会把 `latest.json` 回退到旧日期。
