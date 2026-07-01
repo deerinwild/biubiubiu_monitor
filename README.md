@@ -1,88 +1,11 @@
-# biubiubiu_monitor Render 服务
+# biubiubiu_monitor 409 修复版
 
-## Render 设置
+修复内容：
 
-仓库结构如果是：
+1. GitHub PUT 409 sha 冲突自动重新 GET 最新 sha 并重试。
+2. 月汇总 `archive/summary/YYYY/YYYY-MM.json` 不再因为 sha 过期卡死。
+3. 每轮 flush 默认最多写 20 个日期。
+4. flush 优先写最新日期，避免历史补报压住当天数据。
+5. 新增 `POST /api/flush-all?token=ADMIN_TOKEN`，用于一次性尽量写完 pending 日期。
 
-```text
-biubiubiu_monitor/
-├── package.json
-├── server.js
-└── README.md
-```
-
-Render 新建 Web Service 时填写：
-
-```text
-Root Directory：留空
-Build Command：npm install
-Start Command：npm start
-```
-
-## 必填环境变量
-
-```text
-ADMIN_TOKEN=你自己设置的后台查看密码
-```
-
-## GitHub 长期归档环境变量
-
-为了让 Render 每次收到 APK 上报后立即写入 GitHub，需要再添加：
-
-```text
-GITHUB_TOKEN=你的 GitHub fine-grained token 或 classic token
-GITHUB_OWNER=deerinwild
-GITHUB_REPO=biubiubiu_data
-GITHUB_BRANCH=main
-```
-
-Token 需要对 `deerinwild/biubiubiu_data` 仓库具有 Contents 读写权限。
-
-## 数据归档结构
-
-服务会按“APK 上报数据里的日期”写入 GitHub：
-
-```text
-archive/counters/YYYY/MM/YYYY-MM-DD.json
-archive/summary/YYYY/YYYY-MM.json
-```
-
-`counters` 保存当天每个微博UID、每台设备的累计值；`summary` 保存每月按天聚合结果，Dashboard 优先读取 summary。
-
-## 测试
-
-健康检查：
-
-```text
-https://你的-render域名/health
-```
-
-测试上报：
-
-```bash
-curl -X POST https://你的-render域名/api/ping \
-  -H "Content-Type: application/json" \
-  -d '{"event":"daily_counter_batch","deviceId":"test-device","weiboUid":"1234567890","counters":[{"date":"2026-06-20","danmuSentToday":20,"discussionSentToday":3}]}'
-```
-
-查看 JSON：
-
-```text
-https://你的-render域名/api/stats?token=你的ADMIN_TOKEN
-```
-
-查看可视化面板：
-
-```text
-https://你的-render域名/dashboard?token=你的ADMIN_TOKEN
-```
-
-## GitHub Pages 最新索引
-
-本版本在写入每日明细和月度汇总时，会同步维护：
-
-```text
-archive/summary/latest.json
-```
-
-`latest.json` 指向最新日期的数据，便于 `biubiubiu_data` 仓库根目录的 `index.html` 直接读取，不再需要访问 Render Dashboard。14 天补报写入旧日期时不会把 `latest.json` 回退到旧日期。
+部署：替换 Render 仓库中的 `server.js` 后重新部署即可。

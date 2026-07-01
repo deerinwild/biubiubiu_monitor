@@ -23,7 +23,9 @@ const MAX_EVENTS = Number(process.env.MAX_EVENTS || 5000);
 const GITHUB_FLUSH_INTERVAL_MS = Number(process.env.GITHUB_FLUSH_INTERVAL_MS || 5 * 60 * 1000);
 const GITHUB_RATE_LIMIT_COOLDOWN_MS = Number(process.env.GITHUB_RATE_LIMIT_COOLDOWN_MS || 20 * 60 * 1000);
 const GITHUB_ERROR_COOLDOWN_MS = Number(process.env.GITHUB_ERROR_COOLDOWN_MS || 2 * 60 * 1000);
-const MAX_DATES_PER_FLUSH = Number(process.env.MAX_DATES_PER_FLUSH || 3);
+const MAX_DATES_PER_FLUSH = Number(process.env.MAX_DATES_PER_FLUSH || 20);
+const FLUSH_ALL_MAX_DATES = Number(process.env.FLUSH_ALL_MAX_DATES || 200);
+const GITHUB_PUT_RETRY_MAX = Number(process.env.GITHUB_PUT_RETRY_MAX || 6);
 const STATS_CACHE_MS = Number(process.env.STATS_CACHE_MS || 60 * 1000);
 
 const events = [];
@@ -133,6 +135,10 @@ async function safeText(res) {
   try { return await res.text(); } catch { return ''; }
 }
 
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 function parseGithubErrorBody(text) {
   try { return JSON.parse(text || '{}'); } catch { return { message: text || '' }; }
 }
@@ -185,9 +191,45 @@ async function ghPutJson(path, data, sha, message) {
   if (!res.ok) {
     setGithubCooldownFromResponse(res, text);
     const info = parseGithubErrorBody(text);
-    throw new Error(`GitHub PUT ${path} failed: ${res.status} ${info.message || text}`);
+    const err = new Error(`GitHub PUT ${path} failed: ${res.status} ${info.message || text}`);
+    err.status = res.status;
+    err.path = path;
+    err.githubMessage = info.message || text;
+    throw err;
   }
   return JSON.parse(text || '{}');
+}
+
+function isGithubConflict(err) {
+  const msg = String((err && err.message) || '');
+  return (err && err.status === 409) || /\b409\b/.test(msg) || /sha.*does not match/i.test(msg);
+}
+
+async function ghUpdateJson(path, makeDefault, updater, message, retryMax = GITHUB_PUT_RETRY_MAX) {
+  let lastErr = null;
+  for (let attempt = 0; attempt <= retryMax; attempt += 1) {
+    const current = await ghGetJson(path);
+    const base = current.data || (typeof makeDefault === 'function' ? makeDefault() : cloneJson(makeDefault || {}));
+    const next = await updater(cloneJson(base), current, attempt);
+
+    // updater 返回 null 表示无需写入，例如旧日期不应覆盖 latest 索引。
+    if (next == null) return base;
+
+    try {
+      await ghPutJson(path, next, current.sha, message);
+      return next;
+    } catch (err) {
+      lastErr = err;
+      if (isGithubConflict(err) && attempt < retryMax) {
+        const wait = Math.min(4000, 250 + attempt * 450);
+        console.warn(`[github-write] conflict on ${path}, retry ${attempt + 1}/${retryMax} after ${wait}ms`);
+        await sleep(wait);
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw lastErr || new Error(`GitHub update failed for ${path}`);
 }
 
 function emptyCounterFile(date) {
@@ -359,28 +401,27 @@ function buildLatestUsers(counterData, limit = 100) {
 async function writeLatestIndexToGithub(date, counterPath, summaryPath, counterData) {
   const latestPath = 'archive/summary/latest.json';
   const { monthKey } = monthInfo(date);
-  const current = await ghGetJson(latestPath);
-  const existing = current.data || {};
-  const existingDate = String(existing.date || '');
+  await ghUpdateJson(latestPath, () => ({}), latest => {
+    const existingDate = String(latest.date || '');
 
-  // 14 天补报可能会写入较早日期。latest.json 只指向最新日期，避免被旧数据回退。
-  if (existingDate && existingDate > date) return;
+    // 14 天补报可能会写入较早日期。latest.json 只指向最新日期，避免被旧数据回退。
+    if (existingDate && existingDate > date) return null;
 
-  const totals = summarizeCounter(counterData);
-  const latest = {
-    schemaVersion: 1,
-    app: 'biubiubiu_android',
-    date,
-    month: monthKey,
-    updatedAt: nowIso(),
-    paths: {
-      counter: counterPath,
-      summary: summaryPath,
-    },
-    totals,
-    users: buildLatestUsers(counterData),
-  };
-  await ghPutJson(latestPath, latest, current.sha, `biubiubiu latest ${date}`);
+    const totals = summarizeCounter(counterData);
+    return {
+      schemaVersion: 1,
+      app: 'biubiubiu_android',
+      date,
+      month: monthKey,
+      updatedAt: nowIso(),
+      paths: {
+        counter: counterPath,
+        summary: summaryPath,
+      },
+      totals,
+      users: buildLatestUsers(counterData),
+    };
+  }, `biubiubiu latest ${date}`);
 }
 
 async function writeDateToGithub(date, pendingData) {
@@ -388,24 +429,33 @@ async function writeDateToGithub(date, pendingData) {
   const counterPath = `archive/counters/${year}/${month}/${date}.json`;
   const summaryPath = `archive/summary/${year}/${monthKey}.json`;
 
-  const current = await ghGetJson(counterPath);
-  const counterData = current.data || emptyCounterFile(date);
-  counterData.date = date;
-  mergeCounterFile(counterData, pendingData);
-  counterData.updatedAt = nowIso();
-  await ghPutJson(counterPath, counterData, current.sha, `biubiubiu counter ${date}`);
+  // 关键修复：每次写入都重新 GET 最新 sha，并在 409 sha 冲突时自动重试。
+  // 这样多人补报、Render 自动 flush、手动 flush 同时发生时，不会卡死在月汇总文件。
+  const counterData = await ghUpdateJson(counterPath, () => emptyCounterFile(date), counter => {
+    counter.date = date;
+    mergeCounterFile(counter, pendingData);
+    counter.updatedAt = nowIso();
+    return counter;
+  }, `biubiubiu counter ${date}`);
 
-  const summaryCurrent = await ghGetJson(summaryPath);
-  const summary = summaryCurrent.data || { month: monthKey, days: {} };
-  summary.month = monthKey;
-  summary.days = summary.days || {};
-  summary.days[date] = summarizeCounter(counterData);
-  summary.updatedAt = nowIso();
-  await ghPutJson(summaryPath, summary, summaryCurrent.sha, `biubiubiu summary ${monthKey}`);
+  await ghUpdateJson(summaryPath, () => ({ month: monthKey, days: {} }), summary => {
+    summary.month = monthKey;
+    summary.days = summary.days || {};
+    summary.days[date] = summarizeCounter(counterData);
+    summary.updatedAt = nowIso();
+    return summary;
+  }, `biubiubiu summary ${monthKey}`);
 
   await writeLatestIndexToGithub(date, counterPath, summaryPath, counterData);
 
   statsCache.delete(date);
+}
+
+function pickPendingDates(limit) {
+  // 优先写最新日期，避免大量历史补报把今天和最近几天一直压在队尾。
+  return [...pendingCounters.keys()]
+    .sort((a, b) => String(b).localeCompare(String(a)))
+    .slice(0, Math.max(1, limit || MAX_DATES_PER_FLUSH));
 }
 
 function scheduleFlush(delayMs = GITHUB_FLUSH_INTERVAL_MS) {
@@ -418,7 +468,7 @@ function scheduleFlush(delayMs = GITHUB_FLUSH_INTERVAL_MS) {
   }, delay);
 }
 
-async function flushPendingToGithub(force = false) {
+async function flushPendingToGithub(force = false, options = {}) {
   if (!githubEnabled()) return { ok: false, reason: 'github_disabled' };
   if (flushInProgress) return { ok: false, reason: 'flush_in_progress' };
   if (githubInCooldown()) {
@@ -432,7 +482,8 @@ async function flushPendingToGithub(force = false) {
   }
 
   flushInProgress = true;
-  const dates = [...pendingCounters.keys()].sort().slice(0, MAX_DATES_PER_FLUSH);
+  const maxDates = count(options.maxDates, MAX_DATES_PER_FLUSH) || MAX_DATES_PER_FLUSH;
+  const dates = pickPendingDates(maxDates);
   try {
     for (const date of dates) {
       const pendingData = cloneJson(pendingCounters.get(date));
@@ -546,6 +597,9 @@ app.get('/health', (req, res) => {
     githubCooldownUntil: githubInCooldown() ? new Date(githubCooldownUntil).toISOString() : '',
     lastGithubError,
     flushIntervalMs: GITHUB_FLUSH_INTERVAL_MS,
+    maxDatesPerFlush: MAX_DATES_PER_FLUSH,
+    flushAllMaxDates: FLUSH_ALL_MAX_DATES,
+    putRetryMax: GITHUB_PUT_RETRY_MAX,
   });
 });
 
@@ -577,6 +631,11 @@ app.post('/api/ping', async (req, res) => {
 
 app.post('/api/flush', requireAdmin, async (req, res) => {
   const result = await flushPendingToGithub(true);
+  res.json({ ok: result.ok !== false, result, pendingDates: pendingCounters.size, lastGithubStatus, lastGithubError });
+});
+
+app.post('/api/flush-all', requireAdmin, async (req, res) => {
+  const result = await flushPendingToGithub(true, { maxDates: FLUSH_ALL_MAX_DATES });
   res.json({ ok: result.ok !== false, result, pendingDates: pendingCounters.size, lastGithubStatus, lastGithubError });
 });
 
